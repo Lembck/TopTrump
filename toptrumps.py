@@ -36,10 +36,10 @@ def findBestStat(card, otherCards):
 
     stat_names = ["size", "accessibility", "hostility", "distance", "temperature", "wonder"]
 
-    for stat_index in range(6):
-        stat_values = [getattr(c, stat_names[stat_index]) for c in otherCards]
+    for i in range(6):
+        stat_values = [getattr(c, stat_names[i]) for c in otherCards]
         stat_values_sorted = sorted(stat_values, key=lambda x: (x is None, x), reverse=True)
-        card_stat = getattr(card, stat_names[stat_index])
+        card_stat = getattr(card, stat_names[i])
 
         if card_stat is None:
             rank = len(stat_values_sorted)
@@ -100,6 +100,12 @@ class Player:
         otherCards = set(self.allCards) - set(self.cardsKnownInHand)
         stat = findBestStat(self.hand[0], otherCards)
         return stat
+
+    def removeFirstCardFromHand(self):
+        cardRemoving = self.hand.pop(0)
+        if cardRemoving in self.cardsKnownInHand:
+            self.cardsKnownInHand.remove(cardRemoving)
+        return cardRemoving
         
     def __str__(self):
         return f"{self.name} {self.hand}"
@@ -108,25 +114,46 @@ class Player:
         return f"{self.name} {self.hand}"
 
 class Game:
-    def __init__(self, player_names, allCards):
+    def __init__(self, player_names, allCards, autoPlay=True):
         self.players = [Player(name, [], allCards[:]) for name in player_names]
         self.playerUp = 0
+        self.turns = 0
+        self.autoPlay = autoPlay
         self.dealCards()
+        self.winningCards = {card.name: 0 for card in allCards}
         self.startGame()
+        
 
     def printGameState(self):
         print(", ".join(list(map(lambda p: p.name + " " + str(len(p.hand)), self.players))))
 
+    def removeEmptyPlayers(self):
+        [self.players.pop(i) for i, player in enumerate(self.players) if player.handIsEmpty()]
+    
     def startGame(self):
+        def gameOver():
+            return (len(self.players) == 2 and max(map(lambda p: len(p.hand), self.players)) >= 20)
+
+        def winMessage():
+            winner = list(filter(lambda p: len(p.hand) >= 20, self.players))[0]
+            loser = list(filter(lambda p: len(p.hand) < 20, self.players))[0]
+            return winner.name + " beats " + loser.name + " with " + str(len(winner.hand)) + " cards."
+    
         while True:
-            userInput = input("")
-            if (userInput == "q"):
-                print("Quiting!")
-                break
+            if not self.autoPlay:
+                userInput = input("")
+                if (userInput == "q"):
+                    print("Quiting!")
+                    break
+            self.turns += 1
             self.playRound()
-            self.printGameState()
-            if all(player.handIsEmpty() for player in self.players):
-                print("Game over! All players have empty hands.")
+            if not self.autoPlay:
+                self.printGameState()
+            if (self.turns > 100):
+                #print("Game over!")
+                break
+            if gameOver():
+                #print("Game over! " + winMessage())
                 break
 
     def playRound(self):
@@ -140,7 +167,7 @@ class Game:
         def moveCardsToWinner(winner):
             cardsWon = []
             for player in self.players:
-                cardsWon.append(player.hand.pop(0))
+                cardsWon.append(player.removeFirstCardFromHand())
             self.players[winner].hand.extend(cardsWon)
             return cardsWon
         
@@ -148,8 +175,11 @@ class Game:
             stat = self.players[self.playerUp].chooseStatToPlay()
             winner = checkWhoWon(stat)
             cardsWon = moveCardsToWinner(winner)
-            print(self.players[winner].name, "won", ", ".join(list(map(lambda c: getattr(c, "name"), cardsWon))))
-            
+            winnersCard = cardsWon.pop(winner)
+            self.winningCards[getattr(winnersCard, "name")] += 1
+            winnerCardMsg = getattr(winnersCard, "name") + "'s " + stat + " (" + str(getattr(winnersCard, stat)) + ")"
+            #print(self.players[winner].name, "won", ", ".join(list(map(lambda c: getattr(c, "name") + " (" + str(getattr(c, stat)) + ")", cardsWon))), "with", winnerCardMsg) 
+            self.removeEmptyPlayers()
             self.nextPlayerUp()
         
     def nextPlayerUp(self):
@@ -172,7 +202,7 @@ class Game:
         
 
 allCards = list(map(lambda c: Card(c[0], c[1], c[2], c[3], c[4], c[5], c[6]), cardInfo))
-game = Game(["Charlotte", "Olive", "Michael", "Andrew"], allCards)
+#game = Game(["Charlotte", "Olive", "Michael", "Andrew"], allCards)
 
 #winDistribution = {0: 0, 1: 0, 2: 0, 3: 0}
 #for i in range(100000):
@@ -180,3 +210,19 @@ game = Game(["Charlotte", "Olive", "Michael", "Andrew"], allCards)
 #    winDistribution[game.playRound()] += 1
 #print(winDistribution)
 
+
+aggregatedResults = {card[0]: 0 for card in cardInfo}
+
+for x in range(100000):
+    if (x % 10000 == 0):
+        print(x)
+    game = Game(["Charlotte", "Olive", "Michael", "Andrew"], allCards)
+    for card, value in game.winningCards.items():
+        aggregatedResults[card] += value
+
+totalSum = sum(aggregatedResults.values())
+sortedResults = sorted(aggregatedResults.items(), key=lambda item: item[1], reverse=True)
+
+for card, total in sortedResults:
+    percentage = (total / totalSum) * 100
+    print(f"{card}: {total} ({percentage:.2f}%)")
